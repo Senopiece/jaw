@@ -2,6 +2,7 @@ import sys
 from typing import Callable, Dict
 
 commands: Dict[str, Callable[..., str]] = {}
+offset: int
 r: int
 m: int
 
@@ -27,7 +28,8 @@ def store_unicode(s: str):
     return res
 
 if __name__ == "__main__":
-    _, command, _r, _m, *args  = sys.argv
+    _, command, _offset, _r, _m, *args  = sys.argv
+    offset = int(_offset, base=16) # use for computation of labels
     r = int(_r)
     m = int(_m)
 

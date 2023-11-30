@@ -28,10 +28,10 @@
 //   - regN = index.label - store the signed distance from relative mark to the label
 //   NOTE: regN = .label/index.label generates code that only sets ones, so to ensure correct work it requires register to be filled by zeroes before
 // - augmentations:
-//   - #name arg1 arg2 "multiword arg" - invokes ./augmenter name r m arg1 arg2
+//   - #name arg1 arg2 "multiword arg" - invokes ./augmenter name current_position_hex r_dec m_dec arg1 arg2
 //   - "multiword arg" and substitutes this line with it's stdout, if it exits with non-zero exit code, the whole compilation fails with the response from the invocation
-//   - #... >.label ... will insert the hex of the relative position of this label, doest work inside "multiword arg"
-//   - the result of augmentation must consist only of `basic instructions`
+//   - #... @.label ... will insert the hex of the relative position to this label, doest work inside "multiword arg"
+//   - the result of augmentation must consist only of basic instructions
 
 // reg0 must have only 0x0 or 0x1 values
 reg1[1] = 1 // set reg1 to 0x2
@@ -42,7 +42,7 @@ reg3 = from_bottom.loop
 .loop
 
 // check pointer reached the end, jmp to halt if so
-#eq reg2 >.msgend >.halt 
+#eq reg2 @.msgend @.halt 
 
 // read data bit to reg0[0]
 #mov reg0[0] mem[reg2]
