@@ -1,0 +1,2 @@
+#!/bin/bash
+python ../_shared/augmenter.py "$@"

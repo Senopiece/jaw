@@ -48,7 +48,10 @@ def exec_jaw(r: int, m: int, program: str):
         print("Error: Address space must be greater than or equal to 1.")
         return
     
-    mem: List[bool] = [False]*4**m
+    sizeofreg = 2**m
+    registers_count = 2**r
+    
+    mem: List[bool] = [False]*2**sizeofreg
     
     with open(program, 'rb') as f:
         byte = f.read(1)
@@ -61,7 +64,7 @@ def exec_jaw(r: int, m: int, program: str):
             byte = f.read(1)
     
     pos = CODE_BEGINNING
-    registers: List[List[bool]] = [[False]*2**m]*2**r
+    registers: List[List[bool]] = [[False]*sizeofreg]*registers_count
 
     def memread_1bit():
         nonlocal pos
@@ -119,7 +122,7 @@ def exec_jaw(r: int, m: int, program: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A simple jaw vm")
     parser.add_argument("r", type=int, help="The register span (where there are 2^r registers) (int >= 1)", default=3)
-    parser.add_argument("m", type=int, help="The address space (where mem is of 4^m bits) (int >= 1)", default=8)
+    parser.add_argument("m", type=int, help="The address space (where mem is of 2^2^m bits) (int >= 1)", default=4)
     parser.add_argument("program", type=str, help="The binary file to execute")
     args = parser.parse_args()
     exec_jaw(args.r, args.m, args.program)

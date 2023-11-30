@@ -1,4 +1,4 @@
 #!/bin/bash
 
-# the default jaw vm : jaw-{r}x{m}:a, defaults to jaw-3x8:a
-python ./vm_impls/p1.py $@
+# the default jaw vm : jaw-{r}x{m}:a, defaults to jaw-3x4:a
+python ./vm_impls/p1.py "$@"
