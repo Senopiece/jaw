@@ -22,8 +22,10 @@ import argparse
 import sys
 from typing import List
 
+
 def b2i(bits: List[bool]) -> int:
-    return int(''.join(['1' if b else '0' for b in bits]), 2)
+    return int("".join(["1" if b else "0" for b in bits]), 2)
+
 
 class BitStdOut:
     _buf: List[bool]
@@ -47,13 +49,13 @@ def exec_jaw(r: int, m: int, program: str):
     if m < 1:
         print("Error: Address space must be greater than or equal to 1.")
         return
-    
+
     sizeofreg = 2**m
     registers_count = 2**r
-    
-    mem: List[bool] = [False]*2**sizeofreg
-    
-    with open(program, 'rb') as f:
+
+    mem: List[bool] = [False] * 2**sizeofreg
+
+    with open(program, "rb") as f:
         byte = f.read(1)
         pos = CODE_BEGINNING
         while byte:
@@ -62,32 +64,36 @@ def exec_jaw(r: int, m: int, program: str):
                 mem[pos] = bool(bit)
                 pos += 1
             byte = f.read(1)
-    
+
     pos = CODE_BEGINNING
-    registers: List[List[bool]] = [[False]*sizeofreg]*registers_count
+    registers: List[List[bool]] = [[False] * sizeofreg] * registers_count
 
     def memread_1bit():
         nonlocal pos
         res = mem[pos]
-        pos+=1
+        pos += 1
         return res
-    
+
     def memread(bits: int):
-        res = [False]*bits
+        res = [False] * bits
         for i in range(bits):
             res[i] = memread_1bit()
         return res
-    
+
     stdout = BitStdOut()
-    
+
     # 00{n:[r bits]}{<0/1>:[1 bit]}              = mem[reg[n]] = <0/1>
     # 01{n:[r bits]}{k:[r bits]}                 = mem[reg[n]] ? pp += reg[k]
     # 10{n:[r bits]}{i:[m bits]}{<0/1>:[1 bit]}  = reg[n][i] = <0/1>
     # 11{n:[r bits]}{i:[m bits]}{k:[r bits]}     = reg[n][i] ? pp += reg[k]
 
     while True:
-        regbit = memread_1bit() # true - reg[n][i], false - mem[reg[n]] (aka [bit slot]: reg/mem)
-        jmp = memread_1bit() # true - pp += reg[k], false - write bit (aka [action]: condjmp/write)
+        regbit = (
+            memread_1bit()
+        )  # true - reg[n][i], false - mem[reg[n]] (aka [bit slot]: reg/mem)
+        jmp = (
+            memread_1bit()
+        )  # true - pp += reg[k], false - write bit (aka [action]: condjmp/write)
 
         n = b2i(memread(r))
         regn = registers[n]
@@ -96,9 +102,9 @@ def exec_jaw(r: int, m: int, program: str):
             case (False, False):
                 index = b2i(regn)
                 b = memread_1bit()
-                if b: # check triggers
+                if b:  # check triggers
                     if index == 0:
-                        break # halt
+                        break  # halt
                     elif index == 2:
                         # send stdout
                         stdout.fwd(mem[1])
@@ -121,8 +127,18 @@ def exec_jaw(r: int, m: int, program: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A simple jaw vm")
-    parser.add_argument("r", type=int, help="The register span (where there are 2^r registers) (int >= 1)", default=3)
-    parser.add_argument("m", type=int, help="The address space (where mem is of 2^2^m bits) (int >= 1)", default=4)
+    parser.add_argument(
+        "r",
+        type=int,
+        help="The register span (where there are 2^r registers) (int >= 1)",
+        default=3,
+    )
+    parser.add_argument(
+        "m",
+        type=int,
+        help="The address space (where mem is of 2^2^m bits) (int >= 1)",
+        default=4,
+    )
     parser.add_argument("program", type=str, help="The binary file to execute")
     args = parser.parse_args()
     exec_jaw(args.r, args.m, args.program)

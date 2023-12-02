@@ -22,27 +22,26 @@
 //   - >0xb01... - insert raw bits
 // - labels:
 //   - .label - absolute declaration
-//   - regN = .label - store the absolute position of the label (with the +3 since code is placed from this offset) (requires label to de declared)
-//   - regN = @.label - store the signed distance from this instruction to the label
+//   - .label - when used in macro - the absolute position of the label (with the +3 since code is placed from this offset) (requires label to de declared)
+//   - index.label - when used in macro - the signed distance from relative mark to the label
 //   - {any basic instruction} @index.label - relative mark (requires label to be declared and already has no index reserved)
-//   - regN = index.label - store the signed distance from relative mark to the label
-//   NOTE: regN = .label/index.label generates code that only sets ones, so to ensure correct work it requires register to be filled by zeroes before
 // - augmentations:
 //   - #name arg1 arg2 "multiword arg" - invokes ./augmenter name current_position_hex r_dec m_dec arg1 arg2
 //   - "multiword arg" and substitutes this line with it's stdout, if it exits with non-zero exit code, the whole compilation fails with the response from the invocation
-//   - #... @.label ... will insert the hex of the relative position to this label, doest work inside "multiword arg"
+//   - #... {index.label/.label} ... will insert the hex of the desired value of this label, doest work inside "multiword arg"
 //   - the result of augmentation must consist only of basic instructions
+//   - when a future label needs to be resolved it relies on resolve_{name1}_{name2} *name1_args *name2_args that has `x` on position of unresolved labels and the invocation must return a sequence of hex numbers - the resolved x-es
 
 // reg0 must have only 0x0 or 0x1 values
 reg1[1] = 1 // set reg1 to 0x2
-reg2 = .msg // reg2 is the data pointer
-reg3 = from_bottom.loop
+#set reg2 .msg // reg2 is the data pointer
+#set reg3 from_bottom.loop
 // reg4 must be const 0x0
 
 .loop
 
 // check pointer reached the end, jmp to halt if so
-#eq reg2 @.msgend @.halt 
+#eq reg2 .msgend .halt
 
 // read data bit to reg0[0]
 #mov reg0[0] mem[reg2]
