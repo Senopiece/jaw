@@ -12,49 +12,44 @@
 // - the program pointer starts from 0x3
 
 // syntax guide:
-// - basic instructions:
+// - comment: //
+// - basic instructions: TODO: mv to augmenter
 //   - mem[regN] = <0/1>
 //   - mem[regN] ? pp += regK
 //   - regN[i] = <0/1>
 //   - regN[i] ? pp += regK
-//   // any number N/K/i can be decimal/0xb/0x
-//   - >0xFF... - insert raw hexadecimal bytes
-//   - >0xb01... - insert raw bits
 // - labels:
 //   - .label - absolute declaration
-//   - .label - when used in macro - the absolute position of the label (with the +3 since code is placed from this offset) (requires label to de declared)
-//   - index.label - when used in macro - the signed distance from relative mark to the label
-//   - {any basic instruction} @index.label - relative mark (requires label to be declared and already has no index reserved)
 // - augmentations:
-//   - #name arg1 arg2 "multiword arg" - invokes ./augmenter name current_position_hex r_dec m_dec arg1 arg2
-//   - "multiword arg" and substitutes this line with it's stdout, if it exits with non-zero exit code, the whole compilation fails with the response from the invocation
-//   - #... {index.label/.label} ... will insert the hex of the desired value of this label, doest work inside "multiword arg"
-//   - the result of augmentation must consist only of basic instructions
-//   - when a future label needs to be resolved it relies on resolve_{name1}_{name2} *name1_args *name2_args that has `x` on position of unresolved labels and the invocation must return a sequence of hex numbers - the resolved x-es
+//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {line}, if need a dot in the beginning, use `\.`.
+//   - the result of augmentation must be binary (if started with 0xb) or hexadecimal (if started with 0x)
+//   - ... >{label}< ... will insert the hex of the desired value of this label, when need to insert a raw `>` or `<`, use `\>` or `\<`.
+//   - instead of >label< hex value to augmenter can be passed `x` on it's position, then the augmenter must report with ranges of it's size in format: {min_hex}-{max_hex}, return `0x...-inf` if size can be anything
 
-// reg0 must have only 0x0 or 0x1 values
-reg1[1] = 1 // set reg1 to 0x2
-#set reg2 .msg // reg2 is the data pointer
-#set reg3 from_bottom.loop
-// reg4 must be const 0x0
+reg0: 0x0 = const 0x0                 // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
+reg1: 0x0 = const 0x2                 // set reg1 to 2
+reg2: 0x0 = const >msg<               // reg2 is the data pointer
+reg3: 0x0 = const >loop< - >bottom<   // reg3 
+reg4: 0x0 = const 0x0                 // reg4 must be const 0 (this macro will actually generate no code)
 
 .loop
 
 // check pointer reached the end, jmp to halt if so
-#eq reg2 .msgend .halt
+reg2 == >msgend< ? pp = >halt<
 
 // read data bit to reg0[0]
-#mov reg0[0] mem[reg2]
+reg0[0] = mem[reg2]
 
 // stdout reg0[0] bit
-mem[reg0] = reg0[0] # set data
-mem[reg1] = 1       # trigger collect
+mem[reg0] = reg0[0] // set data
+mem[reg1] = 1       // trigger collect
 
 // advance data pointer
-#inc reg2
+reg2++
 
 // jmp to loop
-reg1[1] ? pp += reg3 @from_bottom.loop
+.bottom
+reg1[1] ? pp += reg3
 
 .halt
 mem[reg4] = 1

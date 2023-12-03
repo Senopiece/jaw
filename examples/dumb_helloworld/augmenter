@@ -4,4 +4,4 @@
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
 # Execute p1.py using the path relative to the script's location
-python "$SCRIPT_DIR/vm_impls/p1.py" "$@"
+python "$SCRIPT_DIR/../_shared/augmenter.py" "$@"

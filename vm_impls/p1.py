@@ -40,7 +40,7 @@ class BitStdOut:
             self._buf = []
 
 
-def exec_jaw(r: int, m: int, program: str):
+def exec_jaw(debug: bool, r: int, m: int, program: str):
     CODE_BEGINNING = 3
 
     if r < 1:
@@ -59,14 +59,13 @@ def exec_jaw(r: int, m: int, program: str):
         byte = f.read(1)
         pos = CODE_BEGINNING
         while byte:
-            for i in range(8):
-                bit = (ord(byte) >> i) & 1
-                mem[pos] = bool(bit)
+            for bit in format(int.from_bytes(byte, "big"), "08b"):
+                mem[pos] = bit == "1"
                 pos += 1
             byte = f.read(1)
 
     pos = CODE_BEGINNING
-    registers: List[List[bool]] = [[False] * sizeofreg] * registers_count
+    registers: List[List[bool]] = [[False] * sizeofreg for _ in range(registers_count)]
 
     def memread_1bit():
         nonlocal pos
@@ -100,45 +99,63 @@ def exec_jaw(r: int, m: int, program: str):
 
         match (regbit, jmp):
             case (False, False):
-                index = b2i(regn)
+                regn_val = b2i(regn)
                 b = memread_1bit()
                 if b:  # check triggers
-                    if index == 0:
+                    if regn_val == 0:
                         break  # halt
-                    elif index == 2:
+                    elif regn_val == 2:
                         # send stdout
                         stdout.fwd(mem[1])
-                mem[index] = b
+                mem[regn_val] = b
+                if debug:
+                    print(f"mem[reg{n}:{regn_val}] = {int(b)}", end="")
             case (False, True):
+                regn_val = b2i(regn)
                 k = b2i(memread(r))
                 regk = registers[k]
-                pos += b2i(regk) if mem[b2i(regn)] else 0
+                regk_val = b2i(regk)
+                pos += regk_val if mem[regn_val] else 0
+                if debug:
+                    print(
+                        f"mem[reg{n}:{regn_val}] ? pp:{pos} += reg{k}:{regk_val}",
+                        end="",
+                    )
             case (True, False):
                 i = b2i(memread(m))
                 regn[i] = memread_1bit()
+                if debug:
+                    print(f"reg{n}[{i}] = {int(regn[i])}", end="")
             case (True, True):
                 i = b2i(memread(m))
                 k = b2i(memread(r))
                 regk = registers[k]
-                pos += b2i(regk) if regn[i] else 0
+                regk_val = b2i(regk)
+                pos += regk_val if regn[i] else 0
+                if debug:
+                    print(f"reg{n}[{i}] ? pp:{pos} += reg{k}:{regk_val}", end="")
             case _:
                 raise ValueError()
+
+        if debug:
+            input()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A simple jaw vm")
     parser.add_argument(
-        "r",
+        "--r",
         type=int,
         help="The register span (where there are 2^r registers) (int >= 1)",
         default=3,
     )
     parser.add_argument(
-        "m",
+        "--m",
         type=int,
         help="The address space (where mem is of 2^2^m bits) (int >= 1)",
         default=4,
     )
+    parser.add_argument("--debug", action="store_true")
     parser.add_argument("program", type=str, help="The binary file to execute")
     args = parser.parse_args()
-    exec_jaw(args.r, args.m, args.program)
+    exec_jaw(args.debug, args.r, args.m, args.program)
