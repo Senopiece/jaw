@@ -13,11 +13,6 @@
 
 // syntax guide:
 // - comment: //
-// - basic instructions: TODO: mv to augmenter
-//   - mem[regN] = <0/1>
-//   - mem[regN] ? pp += regK
-//   - regN[i] = <0/1>
-//   - regN[i] ? pp += regK
 // - labels:
 //   - .label - absolute declaration
 // - augmentations:
