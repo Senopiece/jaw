@@ -14,23 +14,22 @@
 // syntax guide:
 // - comment: //
 // - labels:
-//   - .label - absolute declaration
+//   - .label - absolute declaration, label name consists of any non-space characters
 // - augmentations:
-//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {line}, if need a dot in the beginning, use `\.`.
-//   - the result of augmentation must be binary (if started with 0xb) or hexadecimal (if started with 0x)
-//   - ... >{label}< ... will insert the hex of the desired value of this label, when need to insert a raw `>` or `<`, use `\>` or `\<`.
-//   - instead of >label< hex value to augmenter can be passed `x` on it's position, then the augmenter must report with ranges of it's size in format: {min_hex}-{max_hex}, return `0x...-inf` if size can be anything
+//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {>/?}{line} {*labels}.
+//   - when the line is prepended with `?` the augmenter must report with ranges of it's size and required label names in format: {min_hex}-{max_hex} {*labels}, max_hex can be `inf` and *lables is a list of label names delimited by space.
+//   - when the line is prepended with `>`, there will be passed additional arguments - *labels hex values (in correspondance to the list returned on `?`) the augmenter must report the result of augmentation that must be binary (if started with 0xb) or hexadecimal (if started with 0x)
 
-reg0: 0x0 = const 0x0                 // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
-reg1: 0x0 = const 0x2                 // set reg1 to 2
-reg2: 0x0 = const >msg<               // reg2 is the data pointer
-reg3: 0x0 = const >loop< - >bottom<   // reg3 
-reg4: 0x0 = const 0x0                 // reg4 must be const 0 (this macro will actually generate no code)
+reg0: 0x0 = const 0x0               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
+reg1: 0x0 = const 0x2               // set reg1 to 2
+reg2: 0x0 = const .msg              // reg2 is the data pointer
+reg3: 0x0 = const .loop - .bottom   // reg3 
+reg4: 0x0 = const 0x0               // reg4 must be const 0 (this macro will actually generate no code)
 
 .loop
 
 // check pointer reached the end, jmp to halt if so
-reg2 == >msgend< ? pp = >halt<
+reg2 == .msgend ? pp = .halt
 
 // read data bit to reg0[0]
 reg0[0] = mem[reg2]
