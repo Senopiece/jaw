@@ -16,9 +16,9 @@
 // - labels:
 //   - .label - absolute declaration, label name consists of any non-space characters
 // - augmentations:
-//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {>/?}{line} {*labels}.
-//   - when the line is prepended with `?` the augmenter must report with ranges of it's size and required label names in format: {min_hex}-{max_hex} {*labels}, max_hex can be `inf` and *lables is a list of label names delimited by space.
-//   - when the line is prepended with `>`, there will be passed additional arguments - *labels hex values (in correspondance to the list returned on `?`) the augmenter must report the result of augmentation that must be binary (if started with 0xb) or hexadecimal (if started with 0x)
+//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {>/?} "{line}" {*labels}.
+//   - when there is passed argument `?` the augmenter must report with ranges of it's size and required label names in format: {min_hex}-{max_hex} {*labels}, max_hex can be `inf` and *lables is a list of label names delimited by space.
+//   - when there is passed argument `>`, there will be passed additional arguments - *labels hex values (in correspondance to the list returned on `?`) the augmenter must report the result of augmentation that must be binary (if started with 0xb) or hexadecimal (if started with 0x)
 
 reg0: 0x0 = const 0x0               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
 reg1: 0x0 = const 0x2               // set reg1 to 2

@@ -2,3 +2,4 @@ reg0: 0x0 = const 0x0
 reg1: 0x0 = const 0x1
 reg2: 0x0 = const 0x2
 #dumb_stdout "Hello World!\n"
+mem[reg0] = 1 // halt
