@@ -4,11 +4,10 @@ import sys
 from typing import Any, Callable, List, Tuple
 
 
+@dataclass
 class Return:
     content: str
-
-    def __init__(self, content: str):
-        self.content = content
+    new_labels_offsets: List[int]
 
     @property
     def hex(self) -> str:
@@ -25,8 +24,12 @@ class Return:
 
 @dataclass
 class HexReturn(Return):
-    def __init__(self, content: str):
+    def __init__(self, content: str, new_labels_offsets: List[int] | None = None):
+        # assert content is of hex symbols
         self.content = content
+        self.new_labels_offsets = (
+            new_labels_offsets if new_labels_offsets is not None else []
+        )
 
     @property
     def bin(self):
@@ -43,8 +46,12 @@ class HexReturn(Return):
 
 @dataclass
 class BinReturn(Return):
-    def __init__(self, content: str):
+    def __init__(self, content: str, new_labels_offsets: List[int] | None = None):
+        # assert content is of binary symbols
         self.content = content
+        self.new_labels_offsets = (
+            new_labels_offsets if new_labels_offsets is not None else []
+        )
 
     @property
     def bin(self):
@@ -60,31 +67,16 @@ class BinReturn(Return):
 
 
 @dataclass
-class Range:
-    min: int
-    max: int | None
-
-    @staticmethod
-    def only(value: int):
-        return Range(min=value, max=value)
-
-    @property
-    def ensure_max(self):
-        assert self.max is not None
-        return self.max
-
-
-@dataclass
 class Command:
     regex: re.Pattern[Any]
     func: Callable[..., Return]
     eval_args: Callable[[Tuple[str], List[int]], str]
-    labels: Callable[[Tuple[str]], List[str]]
-    _range: Callable[[], Range]
+    labels: Callable[[Tuple[str]], Tuple[List[str], List[str]]]
+    get_range: Callable[[], "Range"]
 
     @property
     def range(self):
-        return self._range()
+        return self.get_range()
 
 
 commands: List[Command] = []
@@ -94,14 +86,50 @@ m: int
 
 registers_count: int
 sizeofreg: int
+reg_bound_val: int
 
 parambr = re.compile(r"\{:(\S+?):\}")
 
 
 @dataclass
+class Range:
+    min: int
+    max: int
+
+    @staticmethod
+    def only_min(value: int):
+        global reg_bound_val
+        return Range(min=value, max=reg_bound_val)
+
+    @staticmethod
+    def only(value: int):
+        return Range(min=value, max=value)
+
+
+class NotPass:
+    pass
+
+
+@dataclass
+class Label:
+    name: str
+    is_new: bool
+
+    @staticmethod
+    def new(name: str):
+        return Label(name=name, is_new=True)
+
+    @staticmethod
+    def use(name: str):
+        return Label(name=name, is_new=False)
+
+
+@dataclass
 class ParamResolver:
-    resolve: Callable[[str, List[int]], Any]  # (matched arg, labels) => res | None
-    label: Callable[[str], str | None]  # (matched arg) => label | None
+    resolve: Callable[
+        [str, List[int]], NotPass | None | Any
+    ]  # (matched arg, labels) => NotPass - do not pass to the func | None - unresolved | res - resolved value to pass
+    label: Callable[[str], Label | None]  # (matched arg) => label | None
 
 
 @dataclass
@@ -110,7 +138,7 @@ class ParamT:
     resolve: Callable[
         [str, str, List[int]], Any
     ]  # (matched_selector, matched arg, labels) => res | None
-    label: Callable[[str, str], str | None]  # (matched_selector, matched arg)
+    label: Callable[[str, str], Label | None]  # (matched_selector, matched arg)
 
     def gen_resolver(self, s: str):
         matched_selector = self.selector.fullmatch(s)
@@ -124,6 +152,7 @@ class ParamT:
 
 param_resolvers: List[ParamT] = []
 
+# any number
 param_resolvers.append(
     ParamT(
         selector=re.compile(r"N"),
@@ -132,6 +161,7 @@ param_resolvers.append(
     )
 )
 
+# any string
 param_resolvers.append(
     ParamT(
         selector=re.compile(r"S"),
@@ -140,14 +170,43 @@ param_resolvers.append(
     )
 )
 
+
+def extract_use_label(s: str):
+    if not (s[1:].isalnum() and s.startswith(".")):
+        raise ValueError("Invalid label usage : " + s)
+    return s[1:]
+
+
+# use label
 param_resolvers.append(
     ParamT(
         selector=re.compile(r"X"),
         resolve=lambda sm, arg, lbls: lbls.pop(0) if arg.startswith(".") else None,
-        label=lambda sm, arg: arg[1:] if arg.startswith(".") else None,
+        label=lambda sm, arg: Label.use(extract_use_label(arg))
+        if arg.startswith(".")
+        else None,
     )
 )
 
+
+def extract_define_label(s: str):
+    if not (s[2:].isalnum() and s.startswith("@.")):
+        raise ValueError("Invalid label declaration : " + s)
+    return s[2:]
+
+
+# declare label
+param_resolvers.append(
+    ParamT(
+        selector=re.compile(r"L"),
+        resolve=lambda sm, arg, lbls: NotPass() if arg.startswith("@.") else None,
+        label=lambda sm, arg: Label.new(extract_define_label(arg))
+        if arg.startswith("@.")
+        else None,
+    )
+)
+
+# any exact string
 param_resolvers.append(
     ParamT(
         selector=re.compile(r"\`\S*\`"),
@@ -174,39 +233,43 @@ def get_mixed_params_resolver(s: str):
 def add_to_commands(pattern: str, range: Callable[[], Range]) -> Callable[..., Command]:
     def decorate(func: Callable[..., Return]) -> Command:
         escaped_pattern = re.escape(pattern).replace(r"\{:", "{:").replace(r":\}", ":}")
-        regex_pattern = parambr.sub(r"(\\S*)", escaped_pattern)
+        regex_pattern = parambr.sub(r"(.*)", escaped_pattern)
         regex = re.compile(rf"^{regex_pattern}$")
         params = [get_mixed_params_resolver(p) for p in parambr.findall(pattern)]
 
         def eval_args(args: Tuple[str], labels: List[int]) -> str:
             cargs: List[Any] = []
             for param, arg in zip(params, args):
-                carg: Any
                 for resolvep in param:
                     carg = resolvep.resolve(arg, labels)
+                    if isinstance(carg, NotPass):
+                        break
                     if carg is not None:
+                        cargs.append(carg)
                         break
                 else:
                     raise ValueError(f"invalid value : {arg}")
-                cargs.append(carg)
-            return func(*cargs).get
+            res = func(*cargs)
+            # e+3 hardcoded for envirion `a`
+            return f"{res.get} {' '.join(f'{e+3:x}' for e in res.new_labels_offsets)}"
 
         def labels_wrapper(args: Tuple[str]):
-            labels: List[str] = []
+            new_labels: List[str] = []
+            use_labels: List[str] = []
             for param, arg in zip(params, args):
                 for resolvep in param:
                     lbl = resolvep.label(arg)
-                    if lbl is not None:
-                        labels.append(lbl)
+                    if isinstance(lbl, Label):
+                        (new_labels if lbl.is_new else use_labels).append(lbl.name)
                         break  # one label per parameter
-            return labels
+            return new_labels, use_labels
 
         cmd = Command(
             regex=regex,
             func=func,
             eval_args=eval_args,
             labels=labels_wrapper,
-            _range=range,
+            get_range=range,
         )
         commands.append(cmd)
         return cmd
@@ -231,6 +294,16 @@ def set_mem_bit(n: int, b: int):
 
 
 @add_to_commands(
+    "mem[reg{:N:}] ? pp += reg{:N:} {:L:}",
+    range=lambda: cnd_jmp_mem.range,
+)
+def cnd_jmp_mem_with_label(n: int, k: int):
+    res = cnd_jmp_mem.func(n, k)
+    res.new_labels_offsets.append(cnd_jmp_mem.range.max - 1)
+    return res
+
+
+@add_to_commands(
     "mem[reg{:N:}] ? pp += reg{:N:}",
     range=lambda: Range.only(2 + r * 2),
 )
@@ -249,6 +322,16 @@ def set_reg_bit(n: int, i: int, b: int):
 
 
 @add_to_commands(
+    "reg{:N:}[{:N:}] ? pp += reg{:N:} {:L:}",
+    range=lambda: cnd_jmp_reg.range,
+)
+def cnd_jmp_reg_with_label(n: int, i: int, k: int):
+    res = cnd_jmp_reg.func(n, i, k)
+    res.new_labels_offsets.append(cnd_jmp_reg.range.max - 1)
+    return res
+
+
+@add_to_commands(
     "reg{:N:}[{:N:}] ? pp += reg{:N:}",
     range=lambda: Range.only(2 + 2 * r + m),
 )
@@ -257,21 +340,30 @@ def cnd_jmp_reg(n: int, i: int, k: int):
     return BinReturn(f"11{mb(n, r)}{mb(i, m)}{mb(k, r)}")
 
 
+# basic label
+@add_to_commands(
+    "{:L:}",
+    range=lambda: Range.only(0),
+)
+def decl_label():
+    return BinReturn("", [0])
+
+
 # TODO: in case of `reg0: 0x0 = const 0x0` it might actually respond with strict evaluation of the range
 # # Complex instructions
 @add_to_commands(
     "reg{:N:}: {:`any`|X|N:} = const {:X|N:}",
-    range=lambda: Range(0, sizeofreg * set_reg_bit.range.ensure_max),
+    range=lambda: Range(0, sizeofreg * set_reg_bit.range.max),
 )
 def set_full_reg_with_const(n: int, init: str | int, const: int):
     if init == "any":
-        return BinReturn(set_full_reg_from_any(n, const))
+        return BinReturn(_set_full_reg_from_any(n, const))
 
     assert isinstance(init, int)
-    return BinReturn(set_full_reg_from_known(n, init, const))
+    return BinReturn(_set_full_reg_from_known(n, init, const))
 
 
-def set_full_reg_from_known(n: int, init: int, const: int):
+def _set_full_reg_from_known(n: int, init: int, const: int):
     res = ""
     for i, wasbit, needbit in zip(
         range(sizeofreg), mb(init, sizeofreg), mb(const, sizeofreg)
@@ -281,7 +373,7 @@ def set_full_reg_from_known(n: int, init: int, const: int):
     return res
 
 
-def set_full_reg_from_any(n: int, const: int):
+def _set_full_reg_from_any(n: int, const: int):
     return "".join(
         set_reg_bit.func(n, i, int(bit)).bin
         for i, bit in enumerate(mb(const, sizeofreg))
@@ -290,10 +382,10 @@ def set_full_reg_from_any(n: int, const: int):
 
 @add_to_commands(
     "reg{:N:}: {:`any`|X|N:} = const {:X|N:} - {:X|N:}",
-    range=lambda: Range(0, sizeofreg * set_reg_bit.range.ensure_max),
+    range=lambda: Range(0, sizeofreg * set_reg_bit.range.max),
 )
 def set_full_reg_with_const_diff(n: int, init: str | int, a: int, b: int):
-    return set_full_reg_with_const.func(n, init, a - b)
+    return set_full_reg_with_const.func(n, init, (a - b) % reg_max_val)
 
 
 # TODO: regN == X ? pp = X
@@ -303,7 +395,7 @@ def set_full_reg_with_const_diff(n: int, init: str | int, a: int, b: int):
 
 @add_to_commands(
     '#store_unicode "{:S:}"',
-    range=lambda: Range(0, None),
+    range=lambda: Range.only_min(0),
 )
 def store_unicode(s: str):
     s = s.encode().decode("unicode-escape")
@@ -315,7 +407,7 @@ def store_unicode(s: str):
 
 @add_to_commands(
     '#dumb_stdout "{:S:}"',
-    range=lambda: Range(0, None),
+    range=lambda: Range.only_min(0),
 )
 def dumb_stdout(s: str):
     # assumes reg1 is set to 0x1, reg2 is set to 0x2
@@ -329,15 +421,24 @@ def dumb_stdout(s: str):
 
 
 if __name__ == "__main__":
-    _, _offset, _r, _m, _f, msg, *labels = sys.argv
-    offset = int(_offset, base=16)  # use for computation of labels
+    _, _r, _m, _f, *rest = sys.argv
     r = int(_r)
     m = int(_m)
 
+    match _f:
+        case "?":
+            msg, *labels = rest
+        case ">":
+            _offset, msg, *labels = rest
+            offset = int(_offset, base=16)  # use for computation of labels
+        case _:
+            raise ValueError(f"{_f} is not ? or >")
+
     registers_count = 2**r
     sizeofreg = 2**m
+    reg_max_val = 2**sizeofreg
 
-    labels = [int(label, base=0) for label in labels]
+    labels = [int(label, base=16) for label in labels]
 
     for cmd in commands:
         match = cmd.regex.search(msg)
@@ -347,15 +448,13 @@ if __name__ == "__main__":
         match _f:
             case "?":
                 rng = cmd.range
-                labels_names = cmd.labels(args)  # type: ignore
+                created_labels_names, used_labels_names = cmd.labels(args)  # type: ignore
                 print(
-                    f"{rng.min:x}-{'inf' if rng.max is None else hex(rng.max)[2:]} {' '.join(labels_names)}"
+                    f"{rng.min:x}-{rng.max:x} {' '.join(created_labels_names)} | {' '.join(used_labels_names)}"
                 )
             case ">":
                 print(cmd.eval_args(args, labels))  # type: ignore
                 assert len(labels) == 0
-            case _:
-                raise ValueError(f"{_f} is not ? or >")
         break
     else:
         raise ValueError(msg)

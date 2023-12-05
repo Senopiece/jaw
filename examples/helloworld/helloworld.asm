@@ -13,17 +13,20 @@
 
 // syntax guide:
 // - comment: //
-// - labels:
-//   - .label - absolute declaration, label name consists of any non-space characters
-// - augmentations:
-//   - lines that are not started with `.` are forwarded to ./augmenter curr_pos_hex r_dec m_dec {>/?} "{line}" {*labels}.
-//   - when there is passed argument `?` the augmenter must report with ranges of it's size and required label names in format: {min_hex}-{max_hex} {*labels}, max_hex can be `inf` and *lables is a list of label names delimited by space.
-//   - when there is passed argument `>`, there will be passed additional arguments - *labels hex values (in correspondance to the list returned on `?`) the augmenter must report the result of augmentation that must be binary (if started with 0xb) or hexadecimal (if started with 0x)
+// - lines are forwarded to ./augmenter {r_dec} {m_dec} {>/?} {offset_hex} {line} {*used_labels_values}.
+//  - offset hex is passed if `>`
+//  - when there is passed argument `?` the augmenter must report with ranges of it's size and required label names in format:
+//    `{min_hex}-{max_hex} {*created_labels_names} | {*used_labels_names}`,
+//    `*_labels_names` is a list of label names delimited by space.
+//  - when there is passed argument `>`, there will be passed additional arguments - used labels hex values (in correspondance to the used_labels returned on `?`)
+//    the augmenter must report in format `{data} {*created_labels_offsets}`
+//    `data` must be binary (if started with 0xb) or hexadecimal (if started with 0x)
+//    `*created_labels_offsets` must be a sequence of hexadecimal numbers delimited by spaces
 
 reg0: 0x0 = const 0x0               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
 reg1: 0x0 = const 0x2               // set reg1 to 2
 reg2: 0x0 = const .msg              // reg2 is the data pointer
-reg3: 0x0 = const .loop - .bottom   // reg3 
+reg3: 0x0 = const .loop - .bottom   // reg3 for jmp from .bottom to .loop
 reg4: 0x0 = const 0x0               // reg4 must be const 0 (this macro will actually generate no code)
 
 .loop
@@ -42,12 +45,11 @@ mem[reg1] = 1       // trigger collect
 reg2++
 
 // jmp to loop
-.bottom
-reg1[1] ? pp += reg3
+reg1[1] ? pp += reg3 @.bottom
 
 .halt
 mem[reg4] = 1
 
 .msg
-#store_unicode "Hello World"
+#store_unicode "Hello World!\n"
 .msgend

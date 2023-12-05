@@ -7,7 +7,7 @@ class AugmentationError(Exception):
 
 
 def augment_line(r, m, line):
-    command = ["./augmenter", "0x0", str(r), str(m), line]
+    command = ["./augmenter", "0x0", str(r), str(m), ">", line]
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
