@@ -7,13 +7,11 @@ class AugmentationError(Exception):
 
 
 def augment_line(r, m, line):
-    command = ["./augmenter", "0x0", str(r), str(m), ">", line]
+    command = ["./augmenter", str(r), str(m), ">", "0", line]
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     stdout, stderr = process.communicate()
-
-    print(stderr, end="")
 
     if process.returncode != 0:
         raise AugmentationError(f"Error: {stderr}")
@@ -30,6 +28,7 @@ def augment_lines_from_file(r: int, m: int, filename: str):
             if len(line) == 0:
                 continue
             output = augment_line(r, m, line).strip()
+            output = output.split()[0]
             print(line, ":", output)
             if output.startswith("0xb"):
                 content += output[3:]

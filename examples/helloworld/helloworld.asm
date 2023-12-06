@@ -3,7 +3,7 @@
 // special memory addresses:
 // - 0x0: when 1 is written, the program halts
 // - 0x1: stdout signal
-// - 0x2: stdout trigger (reading value from there produces undefined result) (when 1 is written, writes stdout signal to the buffer, when buffer reaches 16 bits, it is printed as unicode character)
+// - 0x2: stdout trigger (reading value from there produces undefined result) (when 1 is written, writes stdout signal to the buffer, when buffer reaches 8 bits, it is printed as ascii character)
 // - 0x3-0xx: the place where your program is located
 
 // valid assumptions:
@@ -29,7 +29,7 @@ reg2: 0x0 = const .msg              // reg2 is the data pointer
 reg3: 0x0 = const .loop - .bottom   // reg3 for jmp from .bottom to .loop
 reg4: 0x0 = const 0x0               // reg4 must be const 0 (this macro will actually generate no code)
 
-.loop
+@.loop
 
 // check pointer reached the end, jmp to halt if so
 reg2 == .msgend ? pp = .halt
@@ -47,9 +47,9 @@ reg2++
 // jmp to loop
 reg1[1] ? pp += reg3 @.bottom
 
-.halt
+@.halt
 mem[reg4] = 1
 
-.msg
-#store_unicode "Hello World!\n"
-.msgend
+@.msg
+#store_ascii "Hello World!\n"
+@.msgend

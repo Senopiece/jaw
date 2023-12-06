@@ -8,7 +8,7 @@
 # special memory addresses:
 # - 0x0: when 1 is written, the program halts
 # - 0x1: stdout signal
-# - 0x2: stdout trigger (reading value from there produces undefined result) (when 1 is written, writes stdout signal to the buffer, when buffer reaches 16 bits, it is printed as unicode character)
+# - 0x2: stdout trigger (reading value from there produces undefined result) (when 1 is written, writes stdout signal to the buffer, when buffer reaches 8 bits, it is printed as ascii character)
 # - 0x3-0xx: the place where your program is located
 
 # valid assumptions:
@@ -35,7 +35,7 @@ class BitStdOut:
 
     def fwd(self, b: bool):
         self._buf.append(b)
-        if len(self._buf) == 16:
+        if len(self._buf) == 8:
             sys.stdout.write(chr(b2i(self._buf)))
             self._buf = []
 
@@ -54,6 +54,7 @@ def exec_jaw(debug: bool, r: int, m: int, program: str):
     registers_count = 2**r
 
     mem: List[bool] = [False] * 2**sizeofreg
+    sizeofmem = 2**sizeofreg
 
     with open(program, "rb") as f:
         byte = f.read(1)
@@ -70,14 +71,11 @@ def exec_jaw(debug: bool, r: int, m: int, program: str):
     def memread_1bit():
         nonlocal pos
         res = mem[pos]
-        pos += 1
+        pos = (1 + pos) % sizeofmem
         return res
 
     def memread(bits: int):
-        res = [False] * bits
-        for i in range(bits):
-            res[i] = memread_1bit()
-        return res
+        return [memread_1bit() for _ in range(bits)]
 
     stdout = BitStdOut()
 
@@ -112,10 +110,11 @@ def exec_jaw(debug: bool, r: int, m: int, program: str):
                     print(f"mem[reg{n}:{regn_val}] = {int(b)}", end="")
             case (False, True):
                 regn_val = b2i(regn)
-                k = b2i(memread(r))
+                k = b2i(memread(r - 1) + [mem[pos]])
                 regk = registers[k]
                 regk_val = b2i(regk)
-                pos += regk_val if mem[regn_val] else 0
+                add = regk_val if mem[regn_val] else 1
+                pos = (pos + add) % sizeofmem
                 if debug:
                     print(
                         f"mem[reg{n}:{regn_val}] ? pp:{pos} += reg{k}:{regk_val}",
@@ -128,14 +127,15 @@ def exec_jaw(debug: bool, r: int, m: int, program: str):
                     print(f"reg{n}[{i}] = {int(regn[i])}", end="")
             case (True, True):
                 i = b2i(memread(m))
-                k = b2i(memread(r))
+                k = b2i(memread(r - 1) + [mem[pos]])
                 regk = registers[k]
                 regk_val = b2i(regk)
-                pos += regk_val if regn[i] else 0
+                add = regk_val if regn[i] else 1
+                pos = (pos + add) % sizeofmem
                 if debug:
                     print(f"reg{n}[{i}] ? pp:{pos} += reg{k}:{regk_val}", end="")
             case _:
-                raise ValueError()
+                raise AssertionError()
 
         if debug:
             input()

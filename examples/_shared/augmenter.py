@@ -70,13 +70,9 @@ class BinReturn(Return):
 class Command:
     regex: re.Pattern[Any]
     func: Callable[..., Return]
-    eval_args: Callable[[Tuple[str], List[int]], str]
-    labels: Callable[[Tuple[str]], Tuple[List[str], List[str]]]
-    get_range: Callable[[], "Range"]
-
-    @property
-    def range(self):
-        return self.get_range()
+    eval: Callable[[Tuple[str], List[int]], str]
+    info: Callable[[Tuple[str]], str]
+    range: Callable[..., "Range"]
 
 
 commands: List[Command] = []
@@ -86,7 +82,7 @@ m: int
 
 registers_count: int
 sizeofreg: int
-reg_bound_val: int
+sizeofmem: int
 
 parambr = re.compile(r"\{:(\S+?):\}")
 
@@ -98,8 +94,8 @@ class Range:
 
     @staticmethod
     def only_min(value: int):
-        global reg_bound_val
-        return Range(min=value, max=reg_bound_val)
+        global sizeofmem
+        return Range(min=value, max=sizeofmem)
 
     @staticmethod
     def only(value: int):
@@ -230,14 +226,16 @@ def get_mixed_params_resolver(s: str):
     return [get_param_resolver(e) for e in mix]
 
 
-def add_to_commands(pattern: str, range: Callable[[], Range]) -> Callable[..., Command]:
+def add_to_commands(
+    pattern: str, range: Callable[..., Range]
+) -> Callable[..., Command]:
     def decorate(func: Callable[..., Return]) -> Command:
         escaped_pattern = re.escape(pattern).replace(r"\{:", "{:").replace(r":\}", ":}")
         regex_pattern = parambr.sub(r"(.*)", escaped_pattern)
         regex = re.compile(rf"^{regex_pattern}$")
         params = [get_mixed_params_resolver(p) for p in parambr.findall(pattern)]
 
-        def eval_args(args: Tuple[str], labels: List[int]) -> str:
+        def eval(args: Tuple[str], labels: List[int]) -> str:
             cargs: List[Any] = []
             for param, arg in zip(params, args):
                 for resolvep in param:
@@ -264,12 +262,35 @@ def add_to_commands(pattern: str, range: Callable[[], Range]) -> Callable[..., C
                         break  # one label per parameter
             return new_labels, use_labels
 
+        def range_wrapper(args: Tuple[str]):
+            cargs: List[Any] = []
+            for param, arg in zip(params, args):
+                for resolvep in param:
+                    lbl = resolvep.label(arg)
+                    if lbl is not None and not lbl.is_new:
+                        cargs.append(None)  # None for use label
+                        break
+                    carg = resolvep.resolve(arg, [])
+                    if isinstance(carg, NotPass):
+                        break
+                    if carg is not None:
+                        cargs.append(carg)
+                        break
+                else:
+                    raise ValueError(f"invalid value : {arg}")
+            return range(*cargs)
+
+        def info(args: Tuple[str]):
+            created_labels_names, used_labels_names = labels_wrapper(args)
+            rng = range_wrapper(args)
+            return f"{rng.min:x}-{rng.max:x} {' '.join(created_labels_names)} | {' '.join(used_labels_names)}"
+
         cmd = Command(
             regex=regex,
             func=func,
-            eval_args=eval_args,
-            labels=labels_wrapper,
-            get_range=range,
+            eval=eval,
+            info=info,
+            range=range,
         )
         commands.append(cmd)
         return cmd
@@ -286,7 +307,7 @@ def mb(n: int, size: int):
 # # Basic instructions
 @add_to_commands(
     "mem[reg{:N:}] = {:N:}",
-    range=lambda: Range.only(3 + r),
+    range=lambda *_: Range.only(3 + r),
 )
 def set_mem_bit(n: int, b: int):
     # 00{n:[r bits]}{<0/1>:[1 bit]}
@@ -295,17 +316,17 @@ def set_mem_bit(n: int, b: int):
 
 @add_to_commands(
     "mem[reg{:N:}] ? pp += reg{:N:} {:L:}",
-    range=lambda: cnd_jmp_mem.range,
+    range=lambda *args: cnd_jmp_mem.range(*args),
 )
 def cnd_jmp_mem_with_label(n: int, k: int):
     res = cnd_jmp_mem.func(n, k)
-    res.new_labels_offsets.append(cnd_jmp_mem.range.max - 1)
+    res.new_labels_offsets.append(cnd_jmp_mem.range(n, k).max - 1)
     return res
 
 
 @add_to_commands(
     "mem[reg{:N:}] ? pp += reg{:N:}",
-    range=lambda: Range.only(2 + r * 2),
+    range=lambda *_: Range.only(2 + r * 2),
 )
 def cnd_jmp_mem(n: int, k: int):
     # 01{n:[r bits]}{k:[r bits]}
@@ -314,7 +335,7 @@ def cnd_jmp_mem(n: int, k: int):
 
 @add_to_commands(
     "reg[{:N:}][{:N:}] = {:N:}",
-    range=lambda: Range.only(3 + r + m),
+    range=lambda *_: Range.only(3 + r + m),
 )
 def set_reg_bit(n: int, i: int, b: int):
     # 10{n:[r bits]}{i:[m bits]}{<0/1>:[1 bit]}
@@ -323,37 +344,40 @@ def set_reg_bit(n: int, i: int, b: int):
 
 @add_to_commands(
     "reg{:N:}[{:N:}] ? pp += reg{:N:} {:L:}",
-    range=lambda: cnd_jmp_reg.range,
+    range=lambda *args: cnd_jmp_reg.range(*args),
 )
 def cnd_jmp_reg_with_label(n: int, i: int, k: int):
     res = cnd_jmp_reg.func(n, i, k)
-    res.new_labels_offsets.append(cnd_jmp_reg.range.max - 1)
+    res.new_labels_offsets.append(cnd_jmp_reg.range(n, i, k).max - 1)
     return res
 
 
 @add_to_commands(
     "reg{:N:}[{:N:}] ? pp += reg{:N:}",
-    range=lambda: Range.only(2 + 2 * r + m),
+    range=lambda *_: Range.only(2 + 2 * r + m),
 )
 def cnd_jmp_reg(n: int, i: int, k: int):
     # 11{n:[r bits]}{i:[m bits]}{k:[r bits]}
     return BinReturn(f"11{mb(n, r)}{mb(i, m)}{mb(k, r)}")
 
 
-# basic label
-@add_to_commands(
-    "{:L:}",
-    range=lambda: Range.only(0),
-)
-def decl_label():
-    return BinReturn("", [0])
+def _resolve_set_full_reg_with_const_range(
+    n: int, init: str | int | None, const: int | None
+):
+    if init == "any":
+        # the guaranteed size of _set_full_reg_from_any
+        return Range.only(sizeofreg * set_reg_bit.range(*args).max)
+
+    if isinstance(init, int) and isinstance(const, int):
+        return Range.only(len(_set_full_reg_from_known(n, init, const)))
+
+    return Range(0, sizeofreg * set_reg_bit.range(*args).max)
 
 
-# TODO: in case of `reg0: 0x0 = const 0x0` it might actually respond with strict evaluation of the range
 # # Complex instructions
 @add_to_commands(
     "reg{:N:}: {:`any`|X|N:} = const {:X|N:}",
-    range=lambda: Range(0, sizeofreg * set_reg_bit.range.max),
+    range=_resolve_set_full_reg_with_const_range,
 )
 def set_full_reg_with_const(n: int, init: str | int, const: int):
     if init == "any":
@@ -380,12 +404,20 @@ def _set_full_reg_from_any(n: int, const: int):
     )
 
 
+def _resolve_set_full_reg_with_const_diff_range(
+    n: int, init: str | int | None, a: int | None, b: int | None
+):
+    return _resolve_set_full_reg_with_const_range(
+        n, init, None if (a is None or b is None) else (a - b) % sizeofmem
+    )
+
+
 @add_to_commands(
     "reg{:N:}: {:`any`|X|N:} = const {:X|N:} - {:X|N:}",
-    range=lambda: Range(0, sizeofreg * set_reg_bit.range.max),
+    range=_resolve_set_full_reg_with_const_diff_range,
 )
 def set_full_reg_with_const_diff(n: int, init: str | int, a: int, b: int):
-    return set_full_reg_with_const.func(n, init, (a - b) % reg_max_val)
+    return set_full_reg_with_const.func(n, init, (a - b) % sizeofmem)
 
 
 # TODO: regN == X ? pp = X
@@ -394,14 +426,14 @@ def set_full_reg_with_const_diff(n: int, init: str | int, a: int, b: int):
 
 
 @add_to_commands(
-    '#store_unicode "{:S:}"',
+    '#store_ascii "{:S:}"',
     range=lambda: Range.only_min(0),
 )
-def store_unicode(s: str):
+def store_ascii(s: str):
     s = s.encode().decode("unicode-escape")
     res = ""
     for ch in s:
-        res += f"{ord(ch):04x}"
+        res += f"{ord(ch):02x}"
     return HexReturn(res)
 
 
@@ -414,10 +446,19 @@ def dumb_stdout(s: str):
     s = s.encode().decode("unicode-escape")
     res = ""
     for ch in s:
-        for bit in f"{ord(ch):016b}":
+        for bit in f"{ord(ch):08b}":
             res += set_mem_bit.func(1, int(bit)).bin  # mem[reg1] = bit // set data
             res += set_mem_bit.func(2, 1).bin  # mem[reg2] = 1 // trigger collect
     return BinReturn(res)
+
+
+# basic label
+@add_to_commands(
+    "{:L:}",
+    range=lambda: Range.only(0),
+)
+def decl_label():
+    return BinReturn("", [0])
 
 
 if __name__ == "__main__":
@@ -431,12 +472,13 @@ if __name__ == "__main__":
         case ">":
             _offset, msg, *labels = rest
             offset = int(_offset, base=16)  # use for computation of labels
+            offset += 3  # hardcode for env `a`
         case _:
             raise ValueError(f"{_f} is not ? or >")
 
     registers_count = 2**r
     sizeofreg = 2**m
-    reg_max_val = 2**sizeofreg
+    sizeofmem = 2**sizeofreg
 
     labels = [int(label, base=16) for label in labels]
 
@@ -447,13 +489,9 @@ if __name__ == "__main__":
         args = match.groups()
         match _f:
             case "?":
-                rng = cmd.range
-                created_labels_names, used_labels_names = cmd.labels(args)  # type: ignore
-                print(
-                    f"{rng.min:x}-{rng.max:x} {' '.join(created_labels_names)} | {' '.join(used_labels_names)}"
-                )
+                print(cmd.info(args))  # type: ignore
             case ">":
-                print(cmd.eval_args(args, labels))  # type: ignore
+                print(cmd.eval(args, labels))  # type: ignore
                 assert len(labels) == 0
         break
     else:
