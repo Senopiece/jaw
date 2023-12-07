@@ -24,7 +24,7 @@
 //    `*created_labels` must be a sequence of hexadecimal numbers delimited by spaces
 
 reg0: 0x0 = const 0x0               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
-reg1: 0x0 = const 0x2               // set reg1 to 2
+reg1: 0x0 = const 0x2               // set reg1 to 2 (generates reg1[-2] = 1)
 reg2: 0x0 = const .msg              // reg2 is the data pointer
 reg3: 0x0 = const .loop - .bottom   // reg3 for jmp from .bottom to .loop
 reg4: 0x0 = const 0x0               // reg4 must be const 0 (this macro will actually generate no code)
@@ -35,7 +35,7 @@ reg7: 0x0 = const .end_init         // reg7 is a condition second temporal value
 @.loop
 
 // check pointer reached the end, jmp to halt if so
-reg2 == .msgend ? pp += reg5 (1 = reg1[1], next = reg6: @.next, end = reg7: @.end_init > @.end_end) @.top
+reg2 == .msgend ? pp += reg5 (1 = reg1[-2], next = reg6: @.next, end = reg7: @.end_init > @.end_end) @.top
 reg7: .end_end = const .end_init
 
 // read data bit to reg0[-1]
@@ -49,7 +49,7 @@ mem[reg1] = 1        // trigger collect
 reg2++
 
 // jmp to loop
-reg1[1] ? pp += reg3 @.bottom
+reg1[-2] ? pp += reg3 @.bottom
 
 @.halt
 mem[reg4] = 1
