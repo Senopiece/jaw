@@ -166,9 +166,11 @@ param_resolvers.append(
     )
 )
 
+lr = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*")
 
-def extract_use_label(s: str):
-    if not (s[1:].isalnum() and s.startswith(".")):
+
+def _extract_use_label(s: str):
+    if not ((lr.fullmatch(s[1:]) is not None) and s.startswith(".")):
         raise ValueError("Invalid label usage : " + s)
     return s[1:]
 
@@ -178,15 +180,15 @@ param_resolvers.append(
     ParamT(
         selector=re.compile(r"X"),
         resolve=lambda sm, arg, lbls: lbls.pop(0) if arg.startswith(".") else None,
-        label=lambda sm, arg: Label.use(extract_use_label(arg))
+        label=lambda sm, arg: Label.use(_extract_use_label(arg))
         if arg.startswith(".")
         else None,
     )
 )
 
 
-def extract_define_label(s: str):
-    if not (s[2:].isalnum() and s.startswith("@.")):
+def _extract_define_label(s: str):
+    if not ((lr.fullmatch(s[2:]) is not None) and s.startswith("@.")):
         raise ValueError("Invalid label declaration : " + s)
     return s[2:]
 
@@ -196,7 +198,7 @@ param_resolvers.append(
     ParamT(
         selector=re.compile(r"L"),
         resolve=lambda sm, arg, lbls: NotPass() if arg.startswith("@.") else None,
-        label=lambda sm, arg: Label.new(extract_define_label(arg))
+        label=lambda sm, arg: Label.new(_extract_define_label(arg))
         if arg.startswith("@.")
         else None,
     )
@@ -248,8 +250,7 @@ def add_to_commands(
                 else:
                     raise ValueError(f"invalid value : {arg}")
             res = func(*cargs)
-            # e+3 hardcoded for envirion `a`
-            return f"{res.get} {' '.join(f'{e+3:x}' for e in res.new_labels_offsets)}"
+            return f"{res.get} {' '.join(f'{e:x}' for e in res.new_labels_offsets)}"
 
         def labels_wrapper(args: Tuple[str]):
             new_labels: List[str] = []
@@ -320,7 +321,7 @@ def set_mem_bit(n: int, b: int):
 )
 def cnd_jmp_mem_with_label(n: int, k: int):
     res = cnd_jmp_mem.func(n, k)
-    res.new_labels_offsets.append(cnd_jmp_mem.range(n, k).max - 1)
+    res.new_labels_offsets.append(offset + len(res.bin) - 1)
     return res
 
 
@@ -348,7 +349,7 @@ def set_reg_bit(n: int, i: int, b: int):
 )
 def cnd_jmp_reg_with_label(n: int, i: int, k: int):
     res = cnd_jmp_reg.func(n, i, k)
-    res.new_labels_offsets.append(cnd_jmp_reg.range(n, i, k).max - 1)
+    res.new_labels_offsets.append(offset + len(res.bin) - 1)
     return res
 
 
@@ -419,8 +420,31 @@ def _resolve_set_full_reg_with_const_diff_range(
 def set_full_reg_with_const_diff(n: int, init: str | int, a: int, b: int):
     return set_full_reg_with_const.func(n, init, (a - b) % sizeofmem)
 
+# todo: mb try to pass the expected generation size
+@add_to_commands(
+    "reg{:N:} == {:X|N:} ? pp += reg{:N:} (1 = reg{:N:}[{:N:}], next = reg{:N:}: {:L:}, end = reg{:N:}: {:L:} > {:L:}) {:L:}",
+    range=,
+)
+def cndjmp_reg_eq_const(n: int, val: int, k: int, s1_n: int, s1_i: int, next_n: int, end_n: int):
+    jmp_end = cnd_jmp_reg.func(s1_n, s1_i, end_n).bin
 
-# TODO: regN == X ? pp = X
+    next_val = len(jmp_end)
+    end_val_init = 0
+    end_val_end = 0
+
+    res = ""
+    for i, bit in enumerate(mb(val, sizeofreg)):
+        match bit:
+            case "1":
+                res += cnd_jmp_reg.func(n, i, end_n).bin
+            case "0":
+                pass
+            case _:
+                raise AssertionError()
+    
+    return BinReturn(res, [next_val, end_val_init, end_val_end, offset + len(res) - 1])
+
+
 # TODO: regN[N] = mem[regN]
 # TODO: regN++
 
@@ -458,7 +482,7 @@ def dumb_stdout(s: str):
     range=lambda: Range.only(0),
 )
 def decl_label():
-    return BinReturn("", [0])
+    return BinReturn("", [offset])
 
 
 if __name__ == "__main__":
