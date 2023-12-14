@@ -93,11 +93,6 @@ class Range:
     max: int
 
     @staticmethod
-    def only_min(value: int):
-        global sizeofmem
-        return Range(min=value, max=sizeofmem)
-
-    @staticmethod
     def only(value: int):
         return Range(min=value, max=value)
 
@@ -300,8 +295,7 @@ def add_to_commands(
 
 
 def mb(n: int, size: int):
-    if n >= 2**size:
-        raise ValueError(f"Value of {n} cannot fit into {size} bits.")
+    n %= 2**size
     return f"{n:0{size}b}"
 
 
@@ -317,7 +311,7 @@ def set_mem_bit(n: int, b: int):
 
 @add_to_commands(
     "mem[reg{:N:}] ? pp += reg{:N:} {:L:}",
-    range=lambda *args: cnd_jmp_mem.range(*args),
+    range=lambda *args, _: cnd_jmp_mem.range(*args),
 )
 def cnd_jmp_mem_with_label(n: int, k: int):
     res = cnd_jmp_mem.func(n, k)
@@ -345,7 +339,7 @@ def set_reg_bit(n: int, i: int, b: int):
 
 @add_to_commands(
     "reg{:N:}[{:N:}] ? pp += reg{:N:} {:L:}",
-    range=lambda *args: cnd_jmp_reg.range(*args),
+    range=lambda *args, _: cnd_jmp_reg.range(*args),
 )
 def cnd_jmp_reg_with_label(n: int, i: int, k: int):
     res = cnd_jmp_reg.func(n, i, k)
@@ -367,12 +361,12 @@ def _resolve_set_full_reg_with_const_range(
 ):
     if init == "any":
         # the guaranteed size of _set_full_reg_from_any
-        return Range.only(sizeofreg * set_reg_bit.range(*args).max)
+        return Range.only(sizeofreg * set_reg_bit.range(n, 0, 0).max)
 
     if isinstance(init, int) and isinstance(const, int):
         return Range.only(len(_set_full_reg_from_known(n, init, const)))
 
-    return Range(0, sizeofreg * set_reg_bit.range(*args).max)
+    return Range(0, sizeofreg * set_reg_bit.range(n, 0, 0).max)
 
 
 # # Complex instructions
@@ -451,19 +445,19 @@ def cndjmp_reg_eq_const(n: int, val: int, k: int, s1_n: int, s1_i: int, next_n: 
 
 @add_to_commands(
     '#store_ascii "{:S:}"',
-    range=lambda: Range.only_min(0),
+    range=lambda s: Range.only(len(s)*8),
 )
 def store_ascii(s: str):
     s = s.encode().decode("unicode-escape")
     res = ""
     for ch in s:
-        res += f"{ord(ch):02x}"
+        res += f"{ord(ch):01x}"
     return HexReturn(res)
 
 
 @add_to_commands(
     '#dumb_stdout "{:S:}"',
-    range=lambda: Range.only_min(0),
+    range=lambda s: Range.only(len(s)*8),
 )
 def dumb_stdout(s: str):
     # assumes reg1 is set to 0x1, reg2 is set to 0x2
@@ -479,7 +473,7 @@ def dumb_stdout(s: str):
 # basic label
 @add_to_commands(
     "{:L:}",
-    range=lambda: Range.only(0),
+    range=lambda *_: Range.only(0),
 )
 def decl_label():
     return BinReturn("", [offset])

@@ -23,20 +23,37 @@
 //    `data` must be binary (if started with 0xb) or hexadecimal (if started with 0x)
 //    `*created_labels` must be a sequence of hexadecimal numbers delimited by spaces
 
-reg0: 0x0 = const 0x0               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
-reg1: 0x0 = const 0x2               // set reg1 to 2 (generates reg1[-2] = 1)
-reg2: 0x0 = const .msg              // reg2 is the data pointer
-reg3: 0x0 = const .loop - .bottom   // reg3 for jmp from .bottom to .loop
-reg4: 0x0 = const 0x0               // reg4 must be const 0 (this macro will actually generate no code)
-reg5: 0x0 = const .halt - .top      // reg5 is for jmp from condition to halt
-reg6: 0x0 = const .next             // reg6 is a condition temporal value holder
-reg7: 0x0 = const .end_init         // reg7 is a condition second temporal value holder
+reg0: 0x0 = 0x0                                                               // reg0 must be only 0 or 1, init with 0 (this macro will actually generate no code)
+reg1: 0x0 = 0x2                                                               // set reg1 to 2 (generates reg1[-2] = 1)
+
+// the current augmented avriable/label syntax:
+
+// @.label - declare a label
+// .label - use label
+
+// $'var - declare or set a variable (so any assignment must be `$'var = ...`, cannot be `'var = ...`)
+// 'var - use variable value
+
+// further some instructions are implisitly using 1 and j variables, so we need to define them
+// TODO: separate notion of compile time variables (alongside with labels, but the usage is strictly when declared before and can be reassigned)
+$'1 = "reg1[-2]"
+$'j = "reg7: 'reg7_value > $'reg7_value"
+$'reg7_value = 0x0
+
+reg2: 0x0 = .msg              // reg2 is the data pointer
+reg3: 0x0 = .loop - .bottom   // reg3 for jmp from .bottom to .loop
+reg4: 0x0 = 0x0               // reg4 must be 0 (this macro will actually generate no code)
+reg5: 0x0 = .halt - .top      // reg5 is for jmp from condition to halt
+reg6: 0x0 = .next             // const .next
+reg7: 'reg7_value = .end_init // temporal variable
 
 @.loop
 
 // check pointer reached the end, jmp to halt if so
-reg2 == .msgend ? pp += reg5 (1 = reg1[-2], next = reg6: @.next, end = reg7: @.end_init > @.end_end) @.top
-reg7: .end_end = const .end_init
+$'next = "reg6: @.next"
+$'j = "reg7: @.end_init > $'end_end"
+reg2 == .msgend ? pp += reg5 @.top // the last command that uses j
+reg7: 'end_end = .end_init
 
 // read data bit to reg0[-1]
 reg0[-1] = mem[reg2]
